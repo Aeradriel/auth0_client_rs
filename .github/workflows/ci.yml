@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ['master']
+  pull_request:
+    branches: ['master']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    container:
+      image: xd009642/tarpaulin:develop-nightly
+      options: --security-opt seccomp=unconfined
+
+    steps:
+      - uses: actions/checkout@v3
+
+      # Install Nightly
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      # Format
+      - name: Run cargo fmt
+        run: cargo fmt --check
+
+      # Lint
+      - name: Run lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        
+      # Tests & Coverage
+      - name: Generate code coverage
+        run: cargo tarpaulin --workspace --skip-clean --target-dir $PWD/target/tarpaulin-cov -o Xml
+
+      # Upload coverage results
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v2
+        with:
+          token: ${{secrets.CODECOV_TOKEN}}
+          fail_ci_if_error: true
+          files: ./cobertura.xml
