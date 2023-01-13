@@ -1,3 +1,5 @@
+//! Types relative to error handling.
+
 use alcoholic_jwt::ValidationError;
 use reqwest::Error as ReqwestError;
 use serde::Deserialize;
@@ -6,6 +8,7 @@ use thiserror::Error as ThisError;
 
 use crate::users::UserError;
 
+/// The error type which represent an error returned by the Auth0 API.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auth0ApiError {
@@ -15,6 +18,7 @@ pub struct Auth0ApiError {
     pub error_code: Option<String>,
 }
 
+/// The error type which is returned if some error occurs duging a request.
 #[derive(Debug, ThisError)]
 pub enum Error {
     #[error("Missing kid in JWT")]

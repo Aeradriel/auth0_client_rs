@@ -1,9 +1,50 @@
-use std::fmt::Display;
+//! # auth0-rs
+//! [![CI](https://github.com/Aeradriel/auth0-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/Aeradriel/auth0-rs/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/Aeradriel/auth0-rs/branch/master/graph/badge.svg?token=46STM1E4U5)](https://codecov.io/gh/Aeradriel/auth0-rs)
+//!
+//! This crates allow to interact with the Auth0 API.
+//! It is still a work in progress and therefore misses lot of functionnalities.
+//!
+//! ## Installation
+//!
+//! Add this line to your `Cargo.toml`:
+//!
+//! ```Toml
+//! [dependencies]
+//! auth0_rs = "0.1.0"
+//! ```
+//!
+//! ## Usage overview
+//!
+//! ```rust
+//! # async fn run() -> auth0_rs::error::Auth0Result<()> {
+//! # use auth0_rs::users::CreateUserPayload;
+//! # use auth0_rs::Auth0Client;
+//! # use auth0_rs::users::OperateUsers;
+//! # use auth0_rs::authorization::Authenticatable;
+//! let mut client = Auth0Client::new(
+//!     "client_id",
+//!     "client_secret",
+//!     "http://domain.com",
+//!     "http://audience.com",
+//! );
+//!
+//! client.authenticate().await?;
+//!
+//! let mut payload =
+//!     CreateUserPayload::from_connection("Username-Password-Authentication");
+//! payload.email = Some("test@example.com".to_owned());
+//! payload.password = Some("password123456789!".to_owned());
+//!
+//! let new_user = client.create_user(&payload).await;
+//! # Ok(())
+//! # }
+//! ```
 
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::fmt::Display;
 
 use crate::utils::URL_REGEX;
 
@@ -12,12 +53,14 @@ pub mod error;
 pub mod users;
 mod utils;
 
+/// The grant type to use when authenticating.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantType {
     ClientCredentials,
 }
 
+/// The client used to make requests towards the Auth0 API.
 pub struct Auth0Client {
     client_id: String,
     client_secret: String,
@@ -29,6 +72,7 @@ pub struct Auth0Client {
 }
 
 impl Auth0Client {
+    /// Creates a new client from given configuration.
     pub fn new(client_id: &str, client_secret: &str, domain: &str, audience: &str) -> Auth0Client {
         Auth0Client {
             client_id: client_id.to_owned(),
@@ -41,11 +85,13 @@ impl Auth0Client {
         }
     }
 
+    /// Sets the grant type for the client.
     pub fn grant_type(mut self, grant_type: GrantType) -> Auth0Client {
         self.grant_type = grant_type;
         self
     }
 
+    /// Make a request towards the Auth0 API. It uses the `audience` field as the base URL.
     pub async fn request<B, R, E>(
         &self,
         method: Method,

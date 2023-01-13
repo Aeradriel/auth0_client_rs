@@ -1,3 +1,5 @@
+//! Types, traits and functions relative to authentication process.
+
 use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWKS};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -5,17 +7,35 @@ use serde::Deserialize;
 use crate::error::{Auth0Result, Error};
 use crate::Auth0Client;
 
+/// Trait for authenticating an Auth0 client.
 #[async_trait]
 pub trait Authenticatable {
+    /// Authenticates the client from its configuration.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn new_client() -> auth0_rs::error::Auth0Result<()> {
+    /// # use auth0_rs::authorization::Authenticatable;
+    /// let mut client =
+    ///     auth0_rs::Auth0Client::new("client_id", "client_secret", "domain", "audience");
+    ///
+    /// client.authenticate().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn authenticate(&mut self) -> Auth0Result<()>;
+    /// Returns the access token if autenticated or `None` if it is not.
     fn access_token(&self) -> Option<String>;
 }
 
+/// The token type we use to authenticate.
 #[derive(Deserialize)]
 enum TokenType {
     Bearer,
 }
 
+/// The response we get when we authenticate.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 struct AccessTokenResponse {
@@ -56,6 +76,7 @@ impl Authenticatable for Auth0Client {
     }
 }
 
+/// Fetches the JWKS from the given URI.
 async fn fetch_jwks(uri: &str) -> Auth0Result<JWKS> {
     let res = reqwest::get(uri).await?;
     let val = res.json::<JWKS>().await?;
@@ -63,6 +84,26 @@ async fn fetch_jwks(uri: &str) -> Auth0Result<JWKS> {
     Ok(val)
 }
 
+/// Validates a JWT token and returns its decoded payload.
+///
+/// # Arguments
+///
+/// * `token` - The JWT token to validate.
+/// * `authority` - The authority to retreive the JWKS from.
+/// * `validations` - The validations to perform on the token.
+///
+/// # Example
+/// ```
+/// # async fn validate_jwt() -> auth0_rs::error::Auth0Result<()> {
+/// # use alcoholic_jwt::Validation;
+/// # use auth0_rs::authorization::valid_jwt;
+/// valid_jwt(
+///     "...jwt_token...",
+///     "authority_to_retreive_jwks_from",
+///     vec![Validation::SubjectPresent, Validation::NotExpired],
+/// ).await?;
+/// # Ok(())
+/// # }
 pub async fn valid_jwt(
     token: &str,
     authority: &str,

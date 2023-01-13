@@ -1,3 +1,5 @@
+//! Types, traits and functions relative to the users API.
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Method;
@@ -7,9 +9,54 @@ use thiserror::Error as ThisError;
 use crate::error::{Auth0ApiError, Auth0Result};
 use crate::Auth0Client;
 
+/// A struct that can interact with the Auth0 users API.
 #[async_trait]
 pub trait OperateUsers {
+    /// Creates a user through the Auth0 users API.
+    ///     
+    /// # Arguments
+    ///
+    /// * `payload` - A struct containing the necessary information to create a user.
+    ///
+    /// The `connection` field is mandatory, others depends on the connection type.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn create_user(client: auth0_rs::Auth0Client) -> auth0_rs::error::Auth0Result<()> {
+    /// # use crate::auth0_rs::users::OperateUsers;
+    /// let mut payload =
+    ///     auth0_rs::users::CreateUserPayload::from_connection("Username-Password-Authentication");
+    /// payload.email = Some("test@example.com".to_owned());
+    /// payload.password = Some("password123456789!".to_owned());
+    ///
+    /// let new_user = client.create_user(&payload).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn create_user(&self, payload: &CreateUserPayload) -> Auth0Result<UserResponse>;
+    /// Updates a user through the Auth0 users API.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID of the user to update.
+    /// * `payload` - A struct containing the necessary information to update a user.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn update_user(client: auth0_rs::Auth0Client) -> auth0_rs::error::Auth0Result<()> {
+    /// # use crate::auth0_rs::users::OperateUsers;
+    /// let mut payload =
+    ///     auth0_rs::users::UpdateUserPayload::from_connection("Username-Password-Authentication");
+    /// payload.password = Some("password123456789!".to_owned());
+    ///
+    /// let resp = client
+    ///     .update_user("auth0|63bfd5cdbd7f2c642dd83768", &payload)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn update_user(
         &self,
         user_id: &str,
@@ -17,6 +64,7 @@ pub trait OperateUsers {
     ) -> Auth0Result<UserResponse>;
 }
 
+/// A struct containing the payload for creating a user.
 #[derive(Serialize)]
 pub struct CreateUserPayload {
     pub connection: String,
@@ -52,6 +100,7 @@ pub struct CreateUserPayload {
     pub username: Option<String>,
 }
 
+/// A struct containing the payload for updating a user.
 #[derive(Serialize)]
 pub struct UpdateUserPayload {
     pub blocked: Option<bool>,
@@ -74,6 +123,7 @@ pub struct UpdateUserPayload {
     pub username: Option<String>,
 }
 
+/// A struct containing the response from the Auth0 users API.
 #[derive(Debug, Deserialize)]
 pub struct UserResponse {
     pub user_id: String,
@@ -87,6 +137,7 @@ pub struct UserResponse {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A struct containing an identity of a user.
 #[derive(Debug, Deserialize)]
 pub struct Identity {
     pub connection: String,
@@ -113,6 +164,7 @@ impl OperateUsers for Auth0Client {
     }
 }
 
+/// An error representing the possible errors that can occur when interacting with the Auth0 users API.
 #[derive(Debug, ThisError)]
 pub enum UserError {
     #[error("Invalid request body: {0}")]
@@ -137,6 +189,11 @@ impl From<Auth0ApiError> for UserError {
 }
 
 impl UpdateUserPayload {
+    /// Returns an empty payload for user creation with only `connection` field set.
+    ///
+    /// # Arguments
+    ///
+    /// * `connection` - The connection type for the user we want to create.
     pub fn from_connection(connection: &str) -> Self {
         Self {
             connection: Some(connection.to_owned()),
@@ -162,6 +219,11 @@ impl UpdateUserPayload {
 }
 
 impl CreateUserPayload {
+    /// Returns an empty payload for user update with only `connection` field set.
+    ///
+    /// # Arguments
+    ///
+    /// * `connection` - The connection type for the user we want to update.
     pub fn from_connection(connection: &str) -> Self {
         Self {
             connection: connection.to_owned(),

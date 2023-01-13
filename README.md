@@ -16,7 +16,7 @@ auth0_rs = "0.1.0"
 ## Usage overview
 
 ```rust
-let client = Auth0Client::new(
+let mut client = Auth0Client::new(
     "client_id",
     "client_secret",
     "http://domain.com",
