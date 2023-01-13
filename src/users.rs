@@ -23,10 +23,10 @@ pub trait OperateUsers {
     /// # Example
     ///
     /// ```
-    /// # async fn create_user(client: auth0_rs::Auth0Client) -> auth0_rs::error::Auth0Result<()> {
-    /// # use crate::auth0_rs::users::OperateUsers;
+    /// # async fn create_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
     /// let mut payload =
-    ///     auth0_rs::users::CreateUserPayload::from_connection("Username-Password-Authentication");
+    ///     auth0_client::users::CreateUserPayload::from_connection("Username-Password-Authentication");
     /// payload.email = Some("test@example.com".to_owned());
     /// payload.password = Some("password123456789!".to_owned());
     ///
@@ -45,10 +45,10 @@ pub trait OperateUsers {
     /// # Example
     ///
     /// ```
-    /// # async fn update_user(client: auth0_rs::Auth0Client) -> auth0_rs::error::Auth0Result<()> {
-    /// # use crate::auth0_rs::users::OperateUsers;
+    /// # async fn update_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
     /// let mut payload =
-    ///     auth0_rs::users::UpdateUserPayload::from_connection("Username-Password-Authentication");
+    ///     auth0_client::users::UpdateUserPayload::from_connection("Username-Password-Authentication");
     /// payload.password = Some("password123456789!".to_owned());
     ///
     /// let resp = client

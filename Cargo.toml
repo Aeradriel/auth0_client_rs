@@ -1,7 +1,15 @@
 [package]
-name = "auth0-rs"
+name = "auth0_client"
 version = "0.1.0"
 edition = "2021"
+description = "An unofficial Auth0 API client for Rust"
+documentation = "https://docs.rs/auth0_client"
+repository = "https://github.com/Aeradriel/auth0_client_rs"
+homepage = "https://github.com/Aeradriel/auth0_client_rs"
+readme = "README.md"
+license-file = "LICENSE"
+keywords = ["auth0", "authorization", "client", "api"]
+categories = ["api-bindings", "authentication"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

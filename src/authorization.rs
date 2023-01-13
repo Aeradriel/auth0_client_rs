@@ -15,10 +15,10 @@ pub trait Authenticatable {
     /// # Example
     ///
     /// ```
-    /// # async fn new_client() -> auth0_rs::error::Auth0Result<()> {
-    /// # use auth0_rs::authorization::Authenticatable;
+    /// # async fn new_client() -> auth0_client::error::Auth0Result<()> {
+    /// # use auth0_client::authorization::Authenticatable;
     /// let mut client =
-    ///     auth0_rs::Auth0Client::new("client_id", "client_secret", "domain", "audience");
+    ///     auth0_client::Auth0Client::new("client_id", "client_secret", "domain", "audience");
     ///
     /// client.authenticate().await?;
     /// # Ok(())
@@ -94,9 +94,9 @@ async fn fetch_jwks(uri: &str) -> Auth0Result<JWKS> {
 ///
 /// # Example
 /// ```
-/// # async fn validate_jwt() -> auth0_rs::error::Auth0Result<()> {
+/// # async fn validate_jwt() -> auth0_client::error::Auth0Result<()> {
 /// # use alcoholic_jwt::Validation;
-/// # use auth0_rs::authorization::valid_jwt;
+/// # use auth0_client::authorization::valid_jwt;
 /// valid_jwt(
 ///     "...jwt_token...",
 ///     "authority_to_retreive_jwks_from",
