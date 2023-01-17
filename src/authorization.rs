@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::error::{Auth0Result, Error};
+use crate::utils::URL_REGEX;
 use crate::Auth0Client;
 
 /// Trait for authenticating an Auth0 client.
@@ -24,7 +25,7 @@ pub trait Authenticatable {
     /// # Ok(())
     /// # }
     /// ```
-    async fn authenticate(&mut self) -> Auth0Result<()>;
+    async fn authenticate(&mut self) -> Auth0Result<String>;
     /// Returns the access token if autenticated or `None` if it is not.
     fn access_token(&self) -> Option<String>;
 }
@@ -44,8 +45,10 @@ struct AccessTokenResponse {
 
 #[async_trait]
 impl Authenticatable for Auth0Client {
-    async fn authenticate(&mut self) -> Auth0Result<()> {
-        let url = format!("{}/oauth/token", self.domain).replace("//", "/");
+    async fn authenticate(&mut self) -> Auth0Result<String> {
+        let url = URL_REGEX
+            .replace_all(&format!("{}/oauth/token", self.domain), "$1")
+            .to_string();
 
         log::debug!("Starting authentication at {url}...");
 
@@ -67,8 +70,8 @@ impl Authenticatable for Auth0Client {
 
         let response = serde_json::from_str::<AccessTokenResponse>(&resp_body)?;
 
-        self.access_token = Some(response.access_token);
-        Ok(())
+        self.access_token = Some(response.access_token.clone());
+        Ok(response.access_token)
     }
 
     fn access_token(&self) -> Option<String> {
@@ -77,8 +80,9 @@ impl Authenticatable for Auth0Client {
 }
 
 /// Fetches the JWKS from the given URI.
-async fn fetch_jwks(uri: &str) -> Auth0Result<JWKS> {
-    let res = reqwest::get(uri).await?;
+async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
+    let url = URL_REGEX.replace_all(url, "$1").to_string();
+    let res = reqwest::get(url).await?;
     let val = res.json::<JWKS>().await?;
 
     Ok(val)

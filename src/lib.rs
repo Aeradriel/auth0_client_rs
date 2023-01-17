@@ -40,12 +40,15 @@
 //! # }
 //! ```
 
+pub use alcoholic_jwt::{ValidJWT, Validation as JWTValidation};
+
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt::Display;
 
+use crate::authorization::{valid_jwt, Authenticatable};
 use crate::utils::URL_REGEX;
 
 pub mod authorization;
@@ -92,8 +95,28 @@ impl Auth0Client {
     }
 
     /// Make a request towards the Auth0 API. It uses the `audience` field as the base URL.
+    ///
+    /// If access token is expired, it will first try to get a new one.
+    ///
+    /// # Parameters
+    ///
+    /// * `method`: The HTTP method to use.
+    /// * `path`: The path to use for the request.
+    /// * `body`: The body to send with the request.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # async fn create_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
+    /// # use auth0_client::users::UserError;
+    /// # use auth0_client::users::UserResponse;
+    /// client.request::<String, UserResponse, UserError>(reqwest::Method::GET, "/api/v2/users", None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn request<B, R, E>(
-        &self,
+        &mut self,
         method: Method,
         path: &str,
         body: Option<B>,
@@ -116,7 +139,30 @@ impl Auth0Client {
             _ => return Err(Error::Unimplemented),
         };
 
-        if let Some(access_token) = &self.access_token {
+        if let Some(mut access_token) = self.access_token.clone() {
+            // Check validity of stored token.
+            let stored_token = valid_jwt(
+                &access_token,
+                &self.domain,
+                vec![
+                    JWTValidation::NotExpired,
+                    JWTValidation::Issuer(self.domain.clone()),
+                    JWTValidation::Audience(self.audience.clone()),
+                ],
+            )
+            .await;
+
+            match stored_token {
+                Ok(_) => (),
+                Err(e) => {
+                    log::debug!("Stored access token is invalid: {}", e.to_string());
+                    log::debug!("Trying to get a new one...");
+
+                    // Token is invalid so we try to get a new one once.
+                    access_token = self.authenticate().await?;
+                }
+            }
+
             req = req.header("Authorization", format!("Bearer {access_token}"));
         }
 
@@ -212,7 +258,7 @@ mod tests {
 
             #[tokio::test]
             async fn too_many_requests() {
-                let client = new_client();
+                let mut client = new_client();
                 let _mock = mockito::mock("GET", "/test").with_status(429).create();
                 let response = client
                     .request::<(), (), UserError>(Method::GET, "/test", None)
@@ -226,7 +272,7 @@ mod tests {
 
             #[tokio::test]
             async fn unauthorized() {
-                let client = new_client();
+                let mut client = new_client();
                 let _mock = mockito::mock("GET", "/").with_status(401).create();
                 let response = client
                     .request::<(), (), UserError>(Method::GET, "/", None)

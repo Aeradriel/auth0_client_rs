@@ -34,7 +34,7 @@ pub trait OperateUsers {
     /// # Ok(())
     /// # }
     /// ```
-    async fn create_user(&self, payload: &CreateUserPayload) -> Auth0Result<UserResponse>;
+    async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse>;
     /// Updates a user through the Auth0 users API.
     ///
     /// # Arguments
@@ -58,7 +58,7 @@ pub trait OperateUsers {
     /// # }
     /// ```
     async fn update_user(
-        &self,
+        &mut self,
         user_id: &str,
         payload: &UpdateUserPayload,
     ) -> Auth0Result<UserResponse>;
@@ -103,23 +103,41 @@ pub struct CreateUserPayload {
 /// A struct containing the payload for updating a user.
 #[derive(Serialize)]
 pub struct UpdateUserPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub email_verified: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verify_email: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub phone_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub phone_verified: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verify_phone_number: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub app_metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub given_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub family_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nickname: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub picture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub connection: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
 }
 
@@ -149,13 +167,13 @@ pub struct Identity {
 
 #[async_trait]
 impl OperateUsers for Auth0Client {
-    async fn create_user(&self, payload: &CreateUserPayload) -> Auth0Result<UserResponse> {
+    async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse> {
         self.request::<_, _, UserError>(Method::POST, "/users", Some(payload))
             .await
     }
 
     async fn update_user(
-        &self,
+        &mut self,
         user_id: &str,
         payload: &UpdateUserPayload,
     ) -> Auth0Result<UserResponse> {
@@ -293,7 +311,7 @@ mod tests {
         #[tokio::test]
         async fn works_with_sample_response() {
             let _m = create_user_mock();
-            let client = new_client();
+            let mut client = new_client();
 
             let mut payload =
                 CreateUserPayload::from_connection("Username-Password-Authentication");
@@ -338,7 +356,7 @@ mod tests {
         #[tokio::test]
         async fn works_with_sample_response() {
             let _m = create_user_mock();
-            let client = new_client();
+            let mut client = new_client();
 
             let mut payload =
                 UpdateUserPayload::from_connection("Username-Password-Authentication");
@@ -372,7 +390,7 @@ mod tests {
                     .to_string(),
                 )
                 .create();
-            let client = new_client();
+            let mut client = new_client();
 
             let mut payload =
                 CreateUserPayload::from_connection("Username-Password-Authentication");
