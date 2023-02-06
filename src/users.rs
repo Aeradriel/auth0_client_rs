@@ -12,6 +12,47 @@ use crate::Auth0Client;
 /// A struct that can interact with the Auth0 users API.
 #[async_trait]
 pub trait OperateUsers {
+    /// Gets a user through the Auth0 users API.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_id` - The user ID of the user to get.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn get_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
+    /// let user = client.get_user("auth0|63dadcecb564285db4445a75").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn get_user(&mut self, user_id: &str) -> Auth0Result<UserResponse>;
+    /// Gets a user through the Auth0 users API.
+    ///
+    /// # Arguments
+    ///
+    /// * `email` - The email of the user to get.
+    /// * `connection` - The connection of the user to get.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn get_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
+    /// let existing = client.get_user_by_email("test@example.com", "Username-Password-Authentication").await?;
+    /// let not_existing = client.get_user_by_email("random@example.com", "Username-Password-Authentication").await?;
+    ///
+    /// assert!(existing.is_some());
+    /// assert!(not_existing.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn get_user_by_email(
+        &mut self,
+        email: &str,
+        connection: &str,
+    ) -> Auth0Result<Option<UserResponse>>;
     /// Creates a user through the Auth0 users API.
     ///     
     /// # Arguments
@@ -23,7 +64,7 @@ pub trait OperateUsers {
     /// # Example
     ///
     /// ```
-    /// # async fn create_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # async fn create_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
     /// let mut payload =
     ///     auth0_client::users::CreateUserPayload::from_connection("Username-Password-Authentication");
@@ -45,7 +86,7 @@ pub trait OperateUsers {
     /// # Example
     ///
     /// ```
-    /// # async fn update_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # async fn update_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
     /// let mut payload =
     ///     auth0_client::users::UpdateUserPayload::from_connection("Username-Password-Authentication");
@@ -142,7 +183,7 @@ pub struct UpdateUserPayload {
 }
 
 /// A struct containing the response from the Auth0 users API.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UserResponse {
     pub user_id: String,
     pub email: Option<String>,
@@ -156,7 +197,7 @@ pub struct UserResponse {
 }
 
 /// A struct containing an identity of a user.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Identity {
     pub connection: String,
     pub user_id: String,
@@ -167,6 +208,27 @@ pub struct Identity {
 
 #[async_trait]
 impl OperateUsers for Auth0Client {
+    async fn get_user(&mut self, user_id: &str) -> Auth0Result<UserResponse> {
+        self.request::<_, _, UserError>(Method::GET, &format!("/users/{user_id}"), None::<String>)
+            .await
+    }
+
+    async fn get_user_by_email(
+        &mut self,
+        email: &str,
+        connection: &str,
+    ) -> Auth0Result<Option<UserResponse>> {
+        let res: Vec<UserResponse> = self
+            .request::<_, _, UserError>(
+                Method::GET,
+                &format!("/users?connection={connection}&q=email%3A{email}&seach_engine=v3"),
+                None::<String>,
+            )
+            .await?;
+
+        Ok(res.get(0).cloned())
+    }
+
     async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse> {
         self.request::<_, _, UserError>(Method::POST, "/users", Some(payload))
             .await
@@ -277,6 +339,110 @@ mod tests {
             &mockito::server_url(),
             &mockito::server_url(),
         )
+    }
+
+    mod get_user {
+        use super::*;
+
+        fn get_user_mock() -> Mock {
+            mock("GET", "/users/1234")
+                .with_status(200)
+                .with_body(
+                    json!({
+                        "created_at": "2023-01-12T09:24:45.761Z",
+                        "email": "test@example.com",
+                        "email_verified": false,
+                        "identities": [
+                          {
+                            "connection": "Username-Password-Authentication",
+                            "user_id": "63bfd5cdbd7f1c642dd83768",
+                            "provider": "auth0",
+                            "isSocial": false
+                          }
+                        ],
+                        "name": "test@example.com",
+                        "nickname": "test",
+                        "picture": "https://s.gravatar.com/avatar/108cfa0160355a6aef1acdaa4493755c?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fth.png",
+                        "updated_at": "2023-01-12T09:24:45.761Z",
+                        "user_id": "auth0|63bfd5cdbd7f1c642dd83768"
+                      }).to_string(),
+                )
+                .create()
+        }
+
+        #[tokio::test]
+        async fn works_with_sample_response() {
+            let _m = get_user_mock();
+            let mut client = new_client();
+
+            let resp = client.get_user("1234").await.unwrap();
+
+            assert_eq!(resp.email, Some("test@example.com".to_owned()));
+        }
+    }
+
+    mod get_user_by_email {
+        use super::*;
+
+        fn get_user_by_email_mock() -> Mock {
+            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&seach_engine=v3")
+                .with_status(200)
+                .with_body(
+                    json!([{
+                        "created_at": "2023-01-12T09:24:45.761Z",
+                        "email": "test@example.com",
+                        "email_verified": false,
+                        "identities": [
+                          {
+                            "connection": "Username-Password-Authentication",
+                            "user_id": "63bfd5cdbd7f1c642dd83768",
+                            "provider": "auth0",
+                            "isSocial": false
+                          }
+                        ],
+                        "name": "test@example.com",
+                        "nickname": "test",
+                        "picture": "https://s.gravatar.com/avatar/108cfa0160355a6aef1acdaa4493755c?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fth.png",
+                        "updated_at": "2023-01-12T09:24:45.761Z",
+                        "user_id": "auth0|63bfd5cdbd7f1c642dd83768"
+                      }]).to_string(),
+                )
+                .create()
+        }
+
+        fn get_user_by_email_not_found_mock() -> Mock {
+            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&seach_engine=v3")
+                .with_status(200)
+                .with_body(json!([]).to_string())
+                .create()
+        }
+
+        #[tokio::test]
+        async fn works_with_sample_response() {
+            let _m = get_user_by_email_mock();
+            let mut client = new_client();
+
+            let resp = client
+                .get_user_by_email("test@example.com", "Username-Password-Authentication")
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(resp.email, Some("test@example.com".to_owned()));
+        }
+
+        #[tokio::test]
+        async fn works_with_not_found() {
+            let _m = get_user_by_email_not_found_mock();
+            let mut client = new_client();
+
+            let resp = client
+                .get_user_by_email("test@example.com", "Username-Password-Authentication")
+                .await
+                .unwrap();
+
+            assert!(resp.is_none());
+        }
     }
 
     mod create_user {

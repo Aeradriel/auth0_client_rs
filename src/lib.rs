@@ -107,7 +107,7 @@ impl Auth0Client {
     /// # Example
     ///
     /// ```rust
-    /// # async fn create_user(client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # async fn create_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
     /// # use auth0_client::users::UserError;
     /// # use auth0_client::users::UserResponse;
