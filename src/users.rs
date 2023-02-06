@@ -221,7 +221,7 @@ impl OperateUsers for Auth0Client {
         let res: Vec<UserResponse> = self
             .request::<_, _, UserError>(
                 Method::GET,
-                &format!("/users?connection={connection}&q=email%3A{email}&seach_engine=v3"),
+                &format!("/users?connection={connection}&q=email%3A{email}&search_engine=v3"),
                 None::<String>,
             )
             .await?;
@@ -385,7 +385,7 @@ mod tests {
         use super::*;
 
         fn get_user_by_email_mock() -> Mock {
-            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&seach_engine=v3")
+            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&search_engine=v3")
                 .with_status(200)
                 .with_body(
                     json!([{
@@ -411,7 +411,7 @@ mod tests {
         }
 
         fn get_user_by_email_not_found_mock() -> Mock {
-            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&seach_engine=v3")
+            mock("GET", "/users?connection=Username-Password-Authentication&q=email%3Atest@example.com&search_engine=v3")
                 .with_status(200)
                 .with_body(json!([]).to_string())
                 .create()
