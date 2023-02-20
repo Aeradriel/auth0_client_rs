@@ -115,8 +115,8 @@ pub async fn valid_jwt(
 ) -> Auth0Result<ValidJWT> {
     let jwks = fetch_jwks(&format!("{authority}/.well-known/jwks.json")).await?;
     let kid = match token_kid(token) {
-        Ok(res) => res.expect("failed to decode kid"),
-        Err(_) => return Err(Error::JwtMissingKid),
+        Ok(Some(res)) => res,
+        _ => return Err(Error::JwtMissingKid),
     };
     let jwk = jwks.find(&kid).ok_or(Error::JwtMissingKid)?;
     let res = validate(token, jwk, validations)?;
