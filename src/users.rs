@@ -6,7 +6,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use thiserror::Error as ThisError;
 
-use crate::error::{Auth0ApiError, Auth0Result};
+use crate::error::{Auth0ApiError, Auth0Result, Error};
 use crate::Auth0Client;
 
 /// A struct that can interact with the Auth0 users API.
@@ -15,11 +15,9 @@ pub trait OperateUsers {
     /// Gets a user through the Auth0 users API.
     ///
     /// # Arguments
-    ///
     /// * `user_id` - The user ID of the user to get.
     ///
     /// # Example
-    ///
     /// ```
     /// # async fn get_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
@@ -28,15 +26,14 @@ pub trait OperateUsers {
     /// # }
     /// ```
     async fn get_user(&mut self, user_id: &str) -> Auth0Result<UserResponse>;
+
     /// Gets a user through the Auth0 users API.
     ///
     /// # Arguments
-    ///
     /// * `email` - The email of the user to get.
     /// * `connection` - The connection of the user to get.
     ///
     /// # Example
-    ///
     /// ```
     /// # async fn get_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
@@ -48,21 +45,21 @@ pub trait OperateUsers {
     /// # Ok(())
     /// # }
     /// ```
+    ///
     async fn get_user_by_email(
         &mut self,
         email: &str,
         connection: &str,
     ) -> Auth0Result<Option<UserResponse>>;
+
     /// Creates a user through the Auth0 users API.
     ///     
     /// # Arguments
-    ///
     /// * `payload` - A struct containing the necessary information to create a user.
     ///
     /// The `connection` field is mandatory, others depends on the connection type.
     ///
     /// # Example
-    ///
     /// ```
     /// # async fn create_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
@@ -76,15 +73,14 @@ pub trait OperateUsers {
     /// # }
     /// ```
     async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse>;
+
     /// Updates a user through the Auth0 users API.
     ///
     /// # Arguments
-    ///
     /// * `user_id` - The user ID of the user to update.
     /// * `payload` - A struct containing the necessary information to update a user.
     ///
     /// # Example
-    ///
     /// ```
     /// # async fn update_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
     /// # use crate::auth0_client::users::OperateUsers;
@@ -103,6 +99,24 @@ pub trait OperateUsers {
         user_id: &str,
         payload: &UpdateUserPayload,
     ) -> Auth0Result<UserResponse>;
+
+    /// Deletes a user through the Auth0 users API.
+    ///
+    /// # Arguments
+    /// * `user_id` - The user ID of the user to delete.
+    ///
+    /// # Example
+    /// ```
+    /// # async fn delete_user(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
+    ///
+    /// let resp = client
+    ///     .delete_user("auth0|63bfd5cdbd7f2c642dd83768")
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn delete_user(&mut self, user_id: &str) -> Auth0Result<()>;
 }
 
 /// A struct containing the payload for creating a user.
@@ -210,7 +224,8 @@ pub struct Identity {
 impl OperateUsers for Auth0Client {
     async fn get_user(&mut self, user_id: &str) -> Auth0Result<UserResponse> {
         self.request::<_, _, UserError>(Method::GET, &format!("/users/{user_id}"), None::<String>)
-            .await
+            .await?
+            .ok_or(Error::InvalidResponseBody)
     }
 
     async fn get_user_by_email(
@@ -227,14 +242,16 @@ impl OperateUsers for Auth0Client {
                 ),
                 None::<String>,
             )
-            .await?;
+            .await?
+            .ok_or(Error::InvalidResponseBody)?;
 
         Ok(res.get(0).cloned())
     }
 
     async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse> {
         self.request::<_, _, UserError>(Method::POST, "/users", Some(payload))
-            .await
+            .await?
+            .ok_or(Error::InvalidResponseBody)
     }
 
     async fn update_user(
@@ -243,7 +260,18 @@ impl OperateUsers for Auth0Client {
         payload: &UpdateUserPayload,
     ) -> Auth0Result<UserResponse> {
         self.request::<_, _, UserError>(Method::PATCH, &format!("/users/{user_id}"), Some(payload))
-            .await
+            .await?
+            .ok_or(Error::InvalidResponseBody)
+    }
+
+    async fn delete_user(&mut self, user_id: &str) -> Auth0Result<()> {
+        self.request::<_, (), UserError>(
+            Method::DELETE,
+            &format!("/users/{user_id}"),
+            None::<String>,
+        )
+        .await?;
+        Ok(())
     }
 }
 
@@ -496,7 +524,7 @@ mod tests {
     mod update_user {
         use super::*;
 
-        fn create_user_mock() -> Mock {
+        fn update_user_mock() -> Mock {
             mock("PATCH", "/users/auth0|63bfd5cdbd7f1c642dd83768")
                 .with_status(200)
                 .with_body(
@@ -524,7 +552,7 @@ mod tests {
 
         #[tokio::test]
         async fn works_with_sample_response() {
-            let _m = create_user_mock();
+            let _m = update_user_mock();
             let mut client = new_client();
 
             let mut payload =
@@ -537,6 +565,27 @@ mod tests {
                 .unwrap();
 
             assert_eq!(resp.email, Some("test@example.com".to_owned()));
+        }
+    }
+
+    mod delete_user {
+        use super::*;
+
+        fn delete_user_mock() -> Mock {
+            mock("DELETE", "/users/auth0|63bfd5cdbd7f1c642dd83768")
+                .with_status(204)
+                .create()
+        }
+
+        #[tokio::test]
+        async fn works_with_sample_response() {
+            let _m = delete_user_mock();
+            let mut client = new_client();
+
+            client
+                .delete_user("auth0|63bfd5cdbd7f1c642dd83768")
+                .await
+                .unwrap();
         }
     }
 

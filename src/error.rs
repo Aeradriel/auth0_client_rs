@@ -39,6 +39,8 @@ pub enum Error {
     Unimplemented,
     #[error("Unknown error: {0}")]
     Unknown(String),
+    #[error("Invalid response body")]
+    InvalidResponseBody,
 }
 
 pub type Auth0Result<T> = Result<T, Error>;

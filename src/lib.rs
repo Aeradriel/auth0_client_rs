@@ -120,7 +120,7 @@ impl Auth0Client {
         method: Method,
         path: &str,
         body: Option<B>,
-    ) -> Auth0Result<R>
+    ) -> Auth0Result<Option<R>>
     where
         B: Serialize,
         R: DeserializeOwned,
@@ -136,6 +136,7 @@ impl Auth0Client {
             Method::GET => self.http_client.get(&url),
             Method::POST => self.http_client.post(&url),
             Method::PATCH => self.http_client.patch(&url),
+            Method::DELETE => self.http_client.delete(&url),
             _ => return Err(Error::Unimplemented),
         };
 
@@ -177,7 +178,11 @@ impl Auth0Client {
         log::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
 
         if status.is_success() {
-            serde_json::from_str::<R>(&resp_body).map_err(Into::into)
+            if status == StatusCode::NO_CONTENT {
+                Ok(None)
+            } else {
+                Ok(Some(serde_json::from_str::<R>(&resp_body)?))
+            }
         } else {
             match status {
                 StatusCode::TOO_MANY_REQUESTS => Err(Error::TooManyRequests),
