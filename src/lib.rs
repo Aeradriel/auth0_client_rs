@@ -61,6 +61,7 @@ mod utils;
 #[serde(rename_all = "snake_case")]
 pub enum GrantType {
     ClientCredentials,
+    Password,
 }
 
 /// The client used to make requests towards the Auth0 API.
@@ -89,7 +90,7 @@ impl Auth0Client {
     }
 
     /// Sets the grant type for the client.
-    pub fn grant_type(mut self, grant_type: GrantType) -> Auth0Client {
+    pub fn grant_type(&mut self, grant_type: GrantType) -> &Auth0Client {
         self.grant_type = grant_type;
         self
     }
@@ -201,6 +202,7 @@ impl Display for GrantType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GrantType::ClientCredentials => write!(f, "client_credentials"),
+            GrantType::Password => write!(f, "password"),
         }
     }
 }
@@ -238,9 +240,10 @@ mod tests {
 
         #[test]
         fn set_the_grant_type() {
-            let client = new_client().grant_type(GrantType::ClientCredentials);
+            let mut client = new_client();
+            client.grant_type(GrantType::Password);
 
-            assert_eq!(client.grant_type, GrantType::ClientCredentials);
+            assert_eq!(client.grant_type, GrantType::Password);
         }
     }
 

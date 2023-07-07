@@ -6,8 +6,9 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use thiserror::Error as ThisError;
 
+use crate::authorization::Authenticatable;
 use crate::error::{Auth0ApiError, Auth0Result, Error};
-use crate::Auth0Client;
+use crate::{Auth0Client, GrantType};
 
 /// A struct that can interact with the Auth0 users API.
 #[async_trait]
@@ -53,7 +54,7 @@ pub trait OperateUsers {
     ) -> Auth0Result<Option<UserResponse>>;
 
     /// Creates a user through the Auth0 users API.
-    ///     
+    ///
     /// # Arguments
     /// * `payload` - A struct containing the necessary information to create a user.
     ///
@@ -117,6 +118,28 @@ pub trait OperateUsers {
     /// # }
     /// ```
     async fn delete_user(&mut self, user_id: &str) -> Auth0Result<()>;
+
+    /// Check a user's password through the Auth0 users API.
+    ///
+    /// # Arguments
+    /// * `payload` - A struct containing the necessary information to check the user's passord.
+    ///
+    /// The `connection` field is mandatory, others depends on the connection type.
+    ///
+    /// # Example
+    /// ```
+    /// # async fn check_password(mut client: auth0_client::Auth0Client) -> auth0_client::error::Auth0Result<()> {
+    /// # use crate::auth0_client::users::OperateUsers;
+    /// let mut payload =
+    ///     auth0_client::users::CheckPasswordPayload::new();
+    /// payload.username = "test@example.com".to_owned();
+    /// payload.password = "password123456789!".to_owned();
+    ///
+    /// client.check_password(&payload).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn check_password(&mut self, payload: &CheckPasswordPayload) -> Auth0Result<()>;
 }
 
 /// A struct containing the payload for creating a user.
@@ -196,6 +219,13 @@ pub struct UpdateUserPayload {
     pub username: Option<String>,
 }
 
+/// A struct containing the payload for checking a user's password.
+#[derive(Default, Serialize)]
+pub struct CheckPasswordPayload {
+    pub username: String,
+    pub password: String,
+}
+
 /// A struct containing the response from the Auth0 users API.
 #[derive(Debug, Deserialize, Clone)]
 pub struct UserResponse {
@@ -271,6 +301,15 @@ impl OperateUsers for Auth0Client {
             None::<String>,
         )
         .await?;
+        Ok(())
+    }
+
+    async fn check_password(&mut self, payload: &CheckPasswordPayload) -> Auth0Result<()> {
+        self.grant_type(GrantType::Password);
+
+        self.authenticate_user(payload.username.clone(), payload.password.clone())
+            .await?;
+
         Ok(())
     }
 }
@@ -354,6 +393,13 @@ impl CreateUserPayload {
             password: None,
             username: None,
         }
+    }
+}
+
+impl CheckPasswordPayload {
+    /// Returns an empty payload for user password checking.
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -586,6 +632,38 @@ mod tests {
                 .delete_user("auth0|63bfd5cdbd7f1c642dd83768")
                 .await
                 .unwrap();
+        }
+    }
+
+    mod check_password {
+        use super::*;
+
+        fn check_password_mock() -> Mock {
+            mock("POST", "/oauth/token")
+                .with_status(200)
+                .with_body(
+                    json!({
+                      "access_token": "ACCESS_TOKEN",
+                      "refresh_token": "REFRESH_TOKEN",
+                      "id_token": "ID_TOKEN",
+                      "token_type": "TOKEN_TYPE",
+                      "expires_in": 3600
+                    })
+                    .to_string(),
+                )
+                .create()
+        }
+
+        #[tokio::test]
+        async fn works_with_sample_response() {
+            let _m = check_password_mock();
+            let mut client = new_client();
+
+            let mut payload = CheckPasswordPayload::new();
+            payload.username = "test@example.com".to_owned();
+            payload.password = "password123456789!".to_owned();
+
+            client.check_password(&payload).await.unwrap();
         }
     }
 
