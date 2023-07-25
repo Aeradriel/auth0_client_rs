@@ -41,6 +41,10 @@ pub enum Error {
     Unknown(String),
     #[error("Invalid response body")]
     InvalidResponseBody,
+    #[error("Invalid username")]
+    InvalidUsername,
+    #[error("Invalid password")]
+    InvalidPassword,
 }
 
 pub type Auth0Result<T> = Result<T, Error>;

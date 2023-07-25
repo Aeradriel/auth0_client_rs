@@ -3,6 +3,7 @@
 use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWKS};
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 use crate::error::{Auth0Result, Error};
 use crate::utils::URL_REGEX;
@@ -26,6 +27,29 @@ pub trait Authenticatable {
     /// # }
     /// ```
     async fn authenticate(&mut self) -> Auth0Result<String>;
+
+    /// Authenticates the a user from its password.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn new_client() -> auth0_client::error::Auth0Result<()> {
+    /// # use auth0_client::authorization::Authenticatable;
+    /// let mut client =
+    ///     auth0_client::Auth0Client::new("client_id", "client_secret", "domain", "audience");
+    ///
+    /// client.authenticate_user("user@email.com".to_string(), "password".to_string()).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn authenticate_user(&mut self, username: String, password: String) -> Auth0Result<()>;
+
+    /// Calls an authentication request with body
+    async fn authenticate_with_body(
+        &mut self,
+        body: HashMap<&str, String>,
+    ) -> Auth0Result<AccessTokenResponse>;
+
     /// Returns the access token if autenticated or `None` if it is not.
     fn access_token(&self) -> Option<String>;
 }
@@ -39,7 +63,7 @@ enum TokenType {
 /// The response we get when we authenticate.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-struct AccessTokenResponse {
+pub struct AccessTokenResponse {
     pub access_token: String,
 }
 
@@ -62,16 +86,53 @@ impl Authenticatable for Auth0Client {
             body
         };
 
+        let response = self.authenticate_with_body(body).await?;
+
+        self.access_token = Some(response.access_token.clone());
+        Ok(response.access_token)
+    }
+
+    async fn authenticate_user(&mut self, username: String, password: String) -> Auth0Result<()> {
+        let url = URL_REGEX
+            .replace_all(&format!("{}/oauth/token", self.domain), "$1")
+            .to_string();
+
+        log::debug!("Starting authentication at {url}...");
+
+        let body = {
+            let mut body = HashMap::new();
+
+            body.insert("grant_type", self.grant_type.to_string());
+            body.insert("client_id", self.client_id.clone());
+            body.insert("client_secret", self.client_secret.clone());
+            body.insert("audience", self.audience.clone());
+            body.insert("username", username);
+            body.insert("password", password);
+            body
+        };
+
+        self.authenticate_with_body(body).await?;
+
+        Ok(())
+    }
+
+    async fn authenticate_with_body(
+        &mut self,
+        body: HashMap<&str, String>,
+    ) -> Auth0Result<AccessTokenResponse> {
+        let url = URL_REGEX
+            .replace_all(&format!("{}/oauth/token", self.domain), "$1")
+            .to_string();
+
+        log::debug!("Starting authentication at {url}...");
+
         let response = self.http_client.post(&url).json(&body).send().await?;
         let status = response.status();
         let resp_body = response.text().await?;
 
         log::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
 
-        let response = serde_json::from_str::<AccessTokenResponse>(&resp_body)?;
-
-        self.access_token = Some(response.access_token.clone());
-        Ok(response.access_token)
+        Ok(serde_json::from_str::<AccessTokenResponse>(&resp_body)?)
     }
 
     fn access_token(&self) -> Option<String> {
