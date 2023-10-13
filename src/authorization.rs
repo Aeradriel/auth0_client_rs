@@ -1,6 +1,6 @@
 //! Types, traits and functions relative to authentication process.
 
-use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWKS};
+use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWK, JWKS};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -149,6 +149,30 @@ async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
     Ok(val)
 }
 
+/// Fetches the JWKS from the given URI if needed.
+async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Result<JWKS> {
+    match jwks {
+        Some(jwks) => Ok(jwks.clone()),
+        None => fetch_jwks(&format!("{authority}/.well-known/jwks.json")).await,
+    }
+}
+
+/// Attempts to find the key in the JWKS.
+/// If it fails, it fetches the JWKS again and tries again.
+async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JWKS)> {
+    match jwks.find(&kid) {
+        Some(jwk) => Ok((jwk.clone(), jwks)),
+        None => {
+            let jwks = fetch_jwks(authority).await?;
+
+            Ok((
+                jwks.find(&kid).ok_or(Error::JwtMissingKid)?.clone(),
+                jwks,
+            ))
+        }
+    }
+}
+
 /// Validates a JWT token and returns its decoded payload.
 ///
 /// # Arguments
@@ -166,6 +190,7 @@ async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
 ///     "...jwt_token...",
 ///     "authority_to_retreive_jwks_from",
 ///     vec![Validation::SubjectPresent, Validation::NotExpired],
+///     None,
 /// ).await?;
 /// # Ok(())
 /// # }
@@ -173,16 +198,17 @@ pub async fn valid_jwt(
     token: &str,
     authority: &str,
     validations: Vec<Validation>,
-) -> Auth0Result<ValidJWT> {
-    let jwks = fetch_jwks(&format!("{authority}/.well-known/jwks.json")).await?;
+    jwks: Option<&JWKS>,
+) -> Auth0Result<(ValidJWT, JWKS)> {
     let kid = match token_kid(token) {
         Ok(Some(res)) => res,
         _ => return Err(Error::JwtMissingKid),
     };
-    let jwk = jwks.find(&kid).ok_or(Error::JwtMissingKid)?;
-    let res = validate(token, jwk, validations)?;
+    let jwks = fetch_jwks_if_needed(jwks, authority).await?;
+    let jwk = get_jwk(&kid, jwks, authority).await?;
+    let jwt = validate(token, &jwk.0, validations)?;
 
-    Ok(res)
+    Ok((jwt, jwk.1))
 }
 
 #[cfg(test)]
@@ -283,6 +309,7 @@ mod tests {
                     &valid_token,
                     &mockito::server_url(),
                     vec![Validation::SubjectPresent],
+                    None,
                 )
                 .await
                 .unwrap();
@@ -300,6 +327,7 @@ mod tests {
                     &valid_token,
                     &mockito::server_url(),
                     vec![Validation::SubjectPresent],
+                    None,
                 )
                 .await;
 
@@ -318,6 +346,7 @@ mod tests {
                     &invalid_token,
                     &mockito::server_url(),
                     vec![Validation::SubjectPresent],
+                    None,
                 )
                 .await;
 

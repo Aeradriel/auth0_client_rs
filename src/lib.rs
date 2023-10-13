@@ -42,6 +42,7 @@
 
 pub use alcoholic_jwt::{ValidJWT, Validation as JWTValidation};
 
+use alcoholic_jwt::JWKS;
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
@@ -73,6 +74,7 @@ pub struct Auth0Client {
     grant_type: GrantType,
     access_token: Option<String>,
     http_client: ReqwestClient,
+    jwks: Option<JWKS>,
 }
 
 impl Auth0Client {
@@ -86,7 +88,18 @@ impl Auth0Client {
             grant_type: GrantType::ClientCredentials,
             access_token: None,
             http_client: ReqwestClient::new(),
+            jwks: None,
         }
+    }
+
+    /// Get a reference to the stored JWKS
+    pub fn jwks(&self) -> Option<&JWKS> {
+        self.jwks.as_ref()
+    }
+
+    /// Set the JWKS
+    pub fn set_jwks(&mut self, jwks: JWKS) {
+        self.jwks = Some(jwks);
     }
 
     /// Sets the grant type for the client.
@@ -151,11 +164,12 @@ impl Auth0Client {
                     JWTValidation::Issuer(self.domain.clone()),
                     JWTValidation::Audience(self.audience.clone()),
                 ],
+                self.jwks.as_ref(),
             )
             .await;
 
             match stored_token {
-                Ok(_) => (),
+                Ok((_, jwks)) => self.jwks = Some(jwks),
                 Err(e) => {
                     log::debug!("Stored access token is invalid: {}", e.to_string());
                     log::debug!("Trying to get a new one...");
