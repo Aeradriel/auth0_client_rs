@@ -160,15 +160,12 @@ async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Resu
 /// Attempts to find the key in the JWKS.
 /// If it fails, it fetches the JWKS again and tries again.
 async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JWKS)> {
-    match jwks.find(&kid) {
+    match jwks.find(kid) {
         Some(jwk) => Ok((jwk.clone(), jwks)),
         None => {
             let jwks = fetch_jwks(authority).await?;
 
-            Ok((
-                jwks.find(&kid).ok_or(Error::JwtMissingKid)?.clone(),
-                jwks,
-            ))
+            Ok((jwks.find(kid).ok_or(Error::JwtMissingKid)?.clone(), jwks))
         }
     }
 }
