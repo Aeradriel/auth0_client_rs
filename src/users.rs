@@ -275,7 +275,12 @@ impl OperateUsers for Auth0Client {
             .await?
             .ok_or(Error::InvalidResponseBody)?;
 
-        Ok(res.get(0).cloned())
+        let user = res
+            .iter()
+            .find(|u| u.identities.iter().any(|i| i.connection == connection))
+            .cloned();
+
+        Ok(user)
     }
 
     async fn create_user(&mut self, payload: &CreateUserPayload) -> Auth0Result<UserResponse> {
