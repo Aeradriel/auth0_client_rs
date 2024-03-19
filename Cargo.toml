@@ -1,6 +1,6 @@
 [package]
 name = "auth0_client"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "An unofficial Auth0 API client for Rust"
 documentation = "https://docs.rs/auth0_client"
