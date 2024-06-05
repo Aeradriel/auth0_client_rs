@@ -231,7 +231,7 @@ pub struct CheckPasswordPayload {
 pub struct UserResponse {
     pub user_id: String,
     pub email: Option<String>,
-    pub email_verified: bool,
+    pub email_verified: Option<bool>,
     pub name: String,
     pub nickname: String,
     pub picture: String,
