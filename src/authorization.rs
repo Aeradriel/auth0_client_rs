@@ -140,6 +140,10 @@ impl Authenticatable for Auth0Client {
     }
 }
 
+fn jwks_url(authority: &str) -> String {
+    format!("{authority}/.well-known/jwks.json")
+}
+
 /// Fetches the JWKS from the given URI.
 async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
     let url = URL_REGEX.replace_all(url, "$1").to_string();
@@ -153,7 +157,7 @@ async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
 async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Result<JWKS> {
     match jwks {
         Some(jwks) => Ok(jwks.clone()),
-        None => fetch_jwks(&format!("{authority}/.well-known/jwks.json")).await,
+        None => fetch_jwks(&jwks_url(authority)).await,
     }
 }
 
@@ -163,7 +167,7 @@ async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JW
     match jwks.find(kid) {
         Some(jwk) => Ok((jwk.clone(), jwks)),
         None => {
-            let jwks = fetch_jwks(authority).await?;
+            let jwks = fetch_jwks(&jwks_url(authority)).await?;
 
             Ok((jwks.find(kid).ok_or(Error::JwtMissingKid)?.clone(), jwks))
         }
