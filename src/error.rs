@@ -1,6 +1,5 @@
 //! Types relative to error handling.
 
-use alcoholic_jwt::ValidationError;
 use reqwest::Error as ReqwestError;
 use serde::Deserialize;
 use serde_json::Error as SerdeJsonError;
@@ -24,7 +23,10 @@ pub enum Error {
     #[error("Missing kid in JWT")]
     JwtMissingKid,
     #[error("Invalid JWT: {0}")]
-    InvalidJwt(#[from] ValidationError),
+    InvalidJwt(#[from] jsonwebtoken::errors::Error),
+    // this is an internal error and should be considered a bug. That's why I'm not returning any aditional info
+    #[error("Invalid JWK")]
+    InvalidJwk,
     #[error("Serialization error: {0}")]
     Serialization(#[from] SerdeJsonError),
     #[error("Reqwest error: {0}")]

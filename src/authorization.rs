@@ -1,6 +1,7 @@
 //! Types, traits and functions relative to authentication process.
 
-use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWK, JWKS};
+use jsonwebtoken::jwk::{AlgorithmParameters, Jwk, JwkSet};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -74,7 +75,7 @@ impl Authenticatable for Auth0Client {
             .replace_all(&format!("{}/oauth/token", self.domain), "$1")
             .to_string();
 
-        log::debug!("Starting authentication at {url}...");
+        tracing::debug!("Starting authentication at {url}...");
 
         let body = {
             let mut body = std::collections::HashMap::new();
@@ -97,7 +98,7 @@ impl Authenticatable for Auth0Client {
             .replace_all(&format!("{}/oauth/token", self.domain), "$1")
             .to_string();
 
-        log::debug!("Starting authentication at {url}...");
+        tracing::debug!("Starting authentication at {url}...");
 
         let body = {
             let mut body = HashMap::new();
@@ -124,13 +125,13 @@ impl Authenticatable for Auth0Client {
             .replace_all(&format!("{}/oauth/token", self.domain), "$1")
             .to_string();
 
-        log::debug!("Starting authentication at {url}...");
+        tracing::debug!("Starting authentication at {url}...");
 
         let response = self.http_client.post(&url).json(&body).send().await?;
         let status = response.status();
         let resp_body = response.text().await?;
 
-        log::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
+        tracing::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
 
         Ok(serde_json::from_str::<AccessTokenResponse>(&resp_body)?)
     }
@@ -145,16 +146,16 @@ fn jwks_url(authority: &str) -> String {
 }
 
 /// Fetches the JWKS from the given URI.
-async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
+async fn fetch_jwks(url: &str) -> Auth0Result<JwkSet> {
     let url = URL_REGEX.replace_all(url, "$1").to_string();
     let res = reqwest::get(url).await?;
-    let val = res.json::<JWKS>().await?;
+    let val = res.json::<JwkSet>().await?;
 
     Ok(val)
 }
 
 /// Fetches the JWKS from the given URI if needed.
-async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Result<JWKS> {
+async fn fetch_jwks_if_needed(jwks: Option<&JwkSet>, authority: &str) -> Auth0Result<JwkSet> {
     match jwks {
         Some(jwks) => Ok(jwks.clone()),
         None => fetch_jwks(&jwks_url(authority)).await,
@@ -163,7 +164,7 @@ async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Resu
 
 /// Attempts to find the key in the JWKS.
 /// If it fails, it fetches the JWKS again and tries again.
-async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JWKS)> {
+async fn get_jwk(kid: &str, jwks: JwkSet, authority: &str) -> Auth0Result<(Jwk, JwkSet)> {
     match jwks.find(kid) {
         Some(jwk) => Ok((jwk.clone(), jwks)),
         None => {
@@ -198,19 +199,29 @@ async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JW
 pub async fn valid_jwt(
     token: &str,
     authority: &str,
-    validations: Vec<Validation>,
-    jwks: Option<&JWKS>,
-) -> Auth0Result<(ValidJWT, JWKS)> {
-    let kid = match token_kid(token) {
-        Ok(Some(res)) => res,
-        _ => return Err(Error::JwtMissingKid),
-    };
+    validation: Validation,
+    jwks: Option<&JwkSet>,
+) -> Auth0Result<(TokenData<Claims>, JwkSet)> {
+    let header = decode_header(token)?;
+    let kid: String = header.kid.ok_or(Error::JwtMissingKid)?;
     let jwks = fetch_jwks_if_needed(jwks, authority).await?;
     let jwk = get_jwk(&kid, jwks, authority).await?;
-    let jwt = validate(token, &jwk.0, validations)?;
+    // let jwt = validate(token, &jwk.0, validations)?;
+
+    let jwt = match jwk.0.algorithm {
+        AlgorithmParameters::RSA(ref rsa) => {
+            let key =
+                DecodingKey::from_rsa_components(&rsa.n, &rsa.e).map_err(|_| Error::InvalidJwk)?;
+            decode::<Claims>(token, &key, &validation)?
+        }
+        _ => return Err(Error::InvalidJwk),
+    };
 
     Ok((jwt, jwk.1))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct Claims {}
 
 #[cfg(test)]
 mod tests {
@@ -297,7 +308,9 @@ mod tests {
         }
 
         mod valid_jwt {
-            use alcoholic_jwt::ValidationError;
+            use std::collections::HashSet;
+
+            use jsonwebtoken::errors::ErrorKind;
 
             use super::*;
 
@@ -305,15 +318,14 @@ mod tests {
             async fn validate_valid_jwt() {
                 let _m = jwks_mock();
                 let valid_token = std::fs::read_to_string("tests/data/valid_jwt.txt").unwrap();
-
-                valid_jwt(
-                    &valid_token,
-                    &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
-                    None,
-                )
-                .await
-                .unwrap();
+                let mut validation = Validation::new(Algorithm::RS256);
+                validation.validate_exp = false;
+                validation.validate_aud = false;
+                validation.required_spec_claims =
+                    HashSet::from_iter([String::from("sub")].into_iter());
+                valid_jwt(&valid_token, &mockito::server_url(), validation, None)
+                    .await
+                    .unwrap();
             }
 
             #[tokio::test]
@@ -324,13 +336,12 @@ mod tests {
                     .with_body(jwks_response)
                     .create();
                 let valid_token = std::fs::read_to_string("tests/data/valid_jwt.txt").unwrap();
-                let res = valid_jwt(
-                    &valid_token,
-                    &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
-                    None,
-                )
-                .await;
+                let mut validation = Validation::new(Algorithm::RS256);
+                validation.validate_exp = false;
+                validation.validate_aud = false;
+                validation.required_spec_claims =
+                    HashSet::from_iter([String::from("sub")].into_iter());
+                let res = valid_jwt(&valid_token, &mockito::server_url(), validation, None).await;
 
                 match res {
                     Err(Error::JwtMissingKid) => (),
@@ -343,16 +354,23 @@ mod tests {
             async fn errored_with_invalid_jwt() {
                 let _m = jwks_mock();
                 let invalid_token = std::fs::read_to_string("tests/data/invalid_jwt.txt").unwrap();
+                let mut validation = Validation::new(Algorithm::RS256);
+                validation.required_spec_claims =
+                    HashSet::from_iter([String::from("sub")].into_iter());
                 let res = valid_jwt(
                     &invalid_token,
                     &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
+                    validation,
                     None,
                 )
                 .await;
 
                 match res {
-                    Err(Error::InvalidJwt(ValidationError::InvalidSignature)) => (),
+                    Err(Error::InvalidJwt(err)) => {
+                        if *err.kind() != ErrorKind::InvalidSignature {
+                            panic!("Expected ErrorKind::InvalidSignature but got {err:?}")
+                        }
+                    },
                     Err(err) => panic!("Expected JWTError(InvalidSignature) but got {err:?}"),
                     _ => panic!("Expected JWTError but got a valid JWT"),
                 }

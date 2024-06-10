@@ -40,9 +40,8 @@
 //! # }
 //! ```
 
-pub use alcoholic_jwt::{ValidJWT, Validation as JWTValidation};
-
-use alcoholic_jwt::JWKS;
+use jsonwebtoken::jwk::JwkSet;
+use jsonwebtoken::{Algorithm, Validation};
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
@@ -74,7 +73,7 @@ pub struct Auth0Client {
     grant_type: GrantType,
     access_token: Option<String>,
     http_client: ReqwestClient,
-    jwks: Option<JWKS>,
+    jwks: Option<JwkSet>,
 }
 
 impl Auth0Client {
@@ -93,12 +92,12 @@ impl Auth0Client {
     }
 
     /// Get a reference to the stored JWKS
-    pub fn jwks(&self) -> Option<&JWKS> {
+    pub fn jwks(&self) -> Option<&JwkSet> {
         self.jwks.as_ref()
     }
 
     /// Set the JWKS
-    pub fn set_jwks(&mut self, jwks: JWKS) {
+    pub fn set_jwks(&mut self, jwks: JwkSet) {
         self.jwks = Some(jwks);
     }
 
@@ -144,7 +143,7 @@ impl Auth0Client {
             .replace_all(&format!("{}/{path}", self.audience), "$1")
             .to_string();
 
-        log::debug!("Starting {method} request at {url}...");
+        tracing::debug!("Starting {method} request at {url}...");
 
         let mut req = match method {
             Method::GET => self.http_client.get(&url),
@@ -156,14 +155,13 @@ impl Auth0Client {
 
         if let Some(mut access_token) = self.access_token.clone() {
             // Check validity of stored token.
+            let mut validation = Validation::new(Algorithm::RS256);
+            validation.set_audience(&[self.audience.clone()]);
+            validation.set_issuer(&[self.domain.clone()]);
             let stored_token = valid_jwt(
                 &access_token,
                 &self.domain,
-                vec![
-                    JWTValidation::NotExpired,
-                    JWTValidation::Issuer(self.domain.clone()),
-                    JWTValidation::Audience(self.audience.clone()),
-                ],
+                validation,
                 self.jwks.as_ref(),
             )
             .await;
@@ -171,8 +169,8 @@ impl Auth0Client {
             match stored_token {
                 Ok((_, jwks)) => self.jwks = Some(jwks),
                 Err(e) => {
-                    log::debug!("Stored access token is invalid: {}", e.to_string());
-                    log::debug!("Trying to get a new one...");
+                    tracing::debug!("Stored access token is invalid: {}", e.to_string());
+                    tracing::debug!("Trying to get a new one...");
 
                     // Token is invalid so we try to get a new one once.
                     access_token = self.authenticate().await?;
@@ -190,7 +188,7 @@ impl Auth0Client {
         let status = response.status();
         let resp_body = response.text().await?;
 
-        log::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
+        tracing::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
 
         if status.is_success() {
             if status == StatusCode::NO_CONTENT {
