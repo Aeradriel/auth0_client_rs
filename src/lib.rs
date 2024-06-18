@@ -40,6 +40,20 @@
 //! # }
 //! ```
 
+#[cfg(all(feature = "jsonwebtoken", feature = "alcoholic_jwt"))]
+compile_error!(
+    "Can't enable `jsonwebtoken` and `alcoholic_jwt`. To enable `jsonwebtoken`, disable default features."
+);
+
+#[cfg(not(any(feature = "jsonwebtoken", feature = "alcoholic_jwt")))]
+compile_error!("Either `jsonwebtoken` or `alcoholic_jwt` has to be enabled.");
+
+#[cfg(all(feature = "tracing", feature = "log"))]
+compile_error!("Can't enable `tracing` and `log`. To enable `tracing`, disable default features.");
+
+#[cfg(not(any(feature = "tracing", feature = "tracing")))]
+compile_error!("Either `tracing` or `log` has to be enabled.");
+
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
