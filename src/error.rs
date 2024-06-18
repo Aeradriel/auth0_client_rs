@@ -22,7 +22,7 @@ pub struct Auth0ApiError {
 pub enum Error {
     #[error("Missing kid in JWT")]
     JwtMissingKid,
-    #[cfg(not(feature = "jsonwebtoken"))]
+    #[cfg(feature = "alcoholic_jwt")]
     #[error("Invalid JWT: {0}")]
     InvalidJwt(#[from] alcoholic_jwt::ValidationError),
     #[cfg(feature = "jsonwebtoken")]
