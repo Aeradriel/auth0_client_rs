@@ -1,12 +1,11 @@
 //! Types, traits and functions relative to authentication process.
 
-use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWK, JWKS};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::error::{Auth0Result, Error};
-use crate::utils::URL_REGEX;
+use crate::utils::{get_kid, log, validate, Jwk, JwkSet, ValidJwt, Validations, URL_REGEX};
 use crate::Auth0Client;
 
 /// Trait for authenticating an Auth0 client.
@@ -145,16 +144,16 @@ fn jwks_url(authority: &str) -> String {
 }
 
 /// Fetches the JWKS from the given URI.
-async fn fetch_jwks(url: &str) -> Auth0Result<JWKS> {
+async fn fetch_jwks(url: &str) -> Auth0Result<JwkSet> {
     let url = URL_REGEX.replace_all(url, "$1").to_string();
     let res = reqwest::get(url).await?;
-    let val = res.json::<JWKS>().await?;
+    let val = res.json::<JwkSet>().await?;
 
     Ok(val)
 }
 
 /// Fetches the JWKS from the given URI if needed.
-async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Result<JWKS> {
+async fn fetch_jwks_if_needed(jwks: Option<&JwkSet>, authority: &str) -> Auth0Result<JwkSet> {
     match jwks {
         Some(jwks) => Ok(jwks.clone()),
         None => fetch_jwks(&jwks_url(authority)).await,
@@ -163,7 +162,7 @@ async fn fetch_jwks_if_needed(jwks: Option<&JWKS>, authority: &str) -> Auth0Resu
 
 /// Attempts to find the key in the JWKS.
 /// If it fails, it fetches the JWKS again and tries again.
-async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JWKS)> {
+async fn get_jwk(kid: &str, jwks: JwkSet, authority: &str) -> Auth0Result<(Jwk, JwkSet)> {
     match jwks.find(kid) {
         Some(jwk) => Ok((jwk.clone(), jwks)),
         None => {
@@ -182,8 +181,9 @@ async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JW
 /// * `authority` - The authority to retreive the JWKS from.
 /// * `validations` - The validations to perform on the token.
 ///
-/// # Example
+/// # Example AlcoholicJwt
 /// ```
+/// # #[cfg(feature = "alcoholic_jwt")]
 /// # async fn validate_jwt() -> auth0_client::error::Auth0Result<()> {
 /// # use alcoholic_jwt::Validation;
 /// # use auth0_client::authorization::valid_jwt;
@@ -195,16 +195,32 @@ async fn get_jwk(kid: &str, jwks: JWKS, authority: &str) -> Auth0Result<(JWK, JW
 /// ).await?;
 /// # Ok(())
 /// # }
+/// ```
+/// 
+/// # Example jsonwebtoken
+/// ```
+/// # #[cfg(feature = "jsonwebtoken")]
+/// # async fn validate_jwt() -> auth0_client::error::Auth0Result<()> {
+/// # use jsonwebtoken::Validation;
+/// # use jsonwebtoken::Algorithm;
+/// # use auth0_client::authorization::valid_jwt;
+/// valid_jwt(
+///     "...jwt_token...",
+///     "authority_to_retreive_jwks_from",
+///     Validation::new(Algorithm::RS256),
+///     None,
+/// ).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub async fn valid_jwt(
     token: &str,
     authority: &str,
-    validations: Vec<Validation>,
-    jwks: Option<&JWKS>,
-) -> Auth0Result<(ValidJWT, JWKS)> {
-    let kid = match token_kid(token) {
-        Ok(Some(res)) => res,
-        _ => return Err(Error::JwtMissingKid),
-    };
+    validations: Validations,
+    jwks: Option<&JwkSet>,
+) -> Auth0Result<(ValidJwt, JwkSet)> {
+    let kid = get_kid(token)?;
+
     let jwks = fetch_jwks_if_needed(jwks, authority).await?;
     let jwk = get_jwk(&kid, jwks, authority).await?;
     let jwt = validate(token, &jwk.0, validations)?;
@@ -297,7 +313,7 @@ mod tests {
         }
 
         mod valid_jwt {
-            use alcoholic_jwt::ValidationError;
+            use crate::utils::test_validations;
 
             use super::*;
 
@@ -305,11 +321,10 @@ mod tests {
             async fn validate_valid_jwt() {
                 let _m = jwks_mock();
                 let valid_token = std::fs::read_to_string("tests/data/valid_jwt.txt").unwrap();
-
                 valid_jwt(
                     &valid_token,
                     &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
+                    test_validations(),
                     None,
                 )
                 .await
@@ -327,7 +342,7 @@ mod tests {
                 let res = valid_jwt(
                     &valid_token,
                     &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
+                    test_validations(),
                     None,
                 )
                 .await;
@@ -346,13 +361,20 @@ mod tests {
                 let res = valid_jwt(
                     &invalid_token,
                     &mockito::server_url(),
-                    vec![Validation::SubjectPresent],
+                    test_validations(),
                     None,
                 )
                 .await;
 
                 match res {
-                    Err(Error::InvalidJwt(ValidationError::InvalidSignature)) => (),
+                    #[cfg(feature = "alcoholic_jwt")]
+                    Err(Error::InvalidJwt(alcoholic_jwt::ValidationError::InvalidSignature)) => (),
+                    #[cfg(feature = "jsonwebtoken")]
+                    Err(Error::InvalidJwt(err)) => {
+                        if *err.kind() != jsonwebtoken::errors::ErrorKind::InvalidSignature {
+                            panic!("Expected ErrorKind::InvalidSignature but got {err:?}")
+                        }
+                    }
                     Err(err) => panic!("Expected JWTError(InvalidSignature) but got {err:?}"),
                     _ => panic!("Expected JWTError but got a valid JWT"),
                 }

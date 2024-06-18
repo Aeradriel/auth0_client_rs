@@ -40,22 +40,35 @@
 //! # }
 //! ```
 
-pub use alcoholic_jwt::{ValidJWT, Validation as JWTValidation};
+#[cfg(all(feature = "jsonwebtoken", feature = "alcoholic_jwt"))]
+compile_error!(
+    "Can't enable `jsonwebtoken` and `alcoholic_jwt`. To enable `jsonwebtoken`, disable default features."
+);
 
-use alcoholic_jwt::JWKS;
+#[cfg(not(any(feature = "jsonwebtoken", feature = "alcoholic_jwt")))]
+compile_error!("Either `jsonwebtoken` or `alcoholic_jwt` has to be enabled.");
+
+#[cfg(all(feature = "tracing", feature = "log"))]
+compile_error!("Can't enable `tracing` and `log`. To enable `tracing`, disable default features.");
+
+#[cfg(not(any(feature = "tracing", feature = "tracing")))]
+compile_error!("Either `tracing` or `log` has to be enabled.");
+
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt::Display;
+use utils::{complete_validations, JwkSet};
 
 use crate::authorization::{valid_jwt, Authenticatable};
-use crate::utils::URL_REGEX;
 
 pub mod authorization;
 pub mod error;
 pub mod users;
 mod utils;
+
+use crate::utils::{log, URL_REGEX};
 
 /// The grant type to use when authenticating.
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -74,7 +87,7 @@ pub struct Auth0Client {
     grant_type: GrantType,
     access_token: Option<String>,
     http_client: ReqwestClient,
-    jwks: Option<JWKS>,
+    jwks: Option<JwkSet>,
 }
 
 impl Auth0Client {
@@ -93,12 +106,12 @@ impl Auth0Client {
     }
 
     /// Get a reference to the stored JWKS
-    pub fn jwks(&self) -> Option<&JWKS> {
+    pub fn jwks(&self) -> Option<&JwkSet> {
         self.jwks.as_ref()
     }
 
     /// Set the JWKS
-    pub fn set_jwks(&mut self, jwks: JWKS) {
+    pub fn set_jwks(&mut self, jwks: JwkSet) {
         self.jwks = Some(jwks);
     }
 
@@ -156,17 +169,9 @@ impl Auth0Client {
 
         if let Some(mut access_token) = self.access_token.clone() {
             // Check validity of stored token.
-            let stored_token = valid_jwt(
-                &access_token,
-                &self.domain,
-                vec![
-                    JWTValidation::NotExpired,
-                    JWTValidation::Issuer(self.domain.clone()),
-                    JWTValidation::Audience(self.audience.clone()),
-                ],
-                self.jwks.as_ref(),
-            )
-            .await;
+            let validations = complete_validations(&self.domain, &self.audience);
+            let stored_token =
+                valid_jwt(&access_token, &self.domain, validations, self.jwks.as_ref()).await;
 
             match stored_token {
                 Ok((_, jwks)) => self.jwks = Some(jwks),
