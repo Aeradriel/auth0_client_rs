@@ -40,21 +40,21 @@
 //! # }
 //! ```
 
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{Algorithm, Validation};
 use error::{Auth0ApiError, Auth0Result, Error};
 use reqwest::{Client as ReqwestClient, Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt::Display;
+use utils::{complete_validations, JwkSet};
 
 use crate::authorization::{valid_jwt, Authenticatable};
-use crate::utils::URL_REGEX;
 
 pub mod authorization;
 pub mod error;
 pub mod users;
 mod utils;
+
+use crate::utils::{log, URL_REGEX};
 
 /// The grant type to use when authenticating.
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -143,7 +143,7 @@ impl Auth0Client {
             .replace_all(&format!("{}/{path}", self.audience), "$1")
             .to_string();
 
-        tracing::debug!("Starting {method} request at {url}...");
+        log::debug!("Starting {method} request at {url}...");
 
         let mut req = match method {
             Method::GET => self.http_client.get(&url),
@@ -155,22 +155,15 @@ impl Auth0Client {
 
         if let Some(mut access_token) = self.access_token.clone() {
             // Check validity of stored token.
-            let mut validation = Validation::new(Algorithm::RS256);
-            validation.set_audience(&[self.audience.clone()]);
-            validation.set_issuer(&[self.domain.clone()]);
-            let stored_token = valid_jwt(
-                &access_token,
-                &self.domain,
-                validation,
-                self.jwks.as_ref(),
-            )
-            .await;
+            let validations = complete_validations(&self.domain, &self.audience);
+            let stored_token =
+                valid_jwt(&access_token, &self.domain, validations, self.jwks.as_ref()).await;
 
             match stored_token {
                 Ok((_, jwks)) => self.jwks = Some(jwks),
                 Err(e) => {
-                    tracing::debug!("Stored access token is invalid: {}", e.to_string());
-                    tracing::debug!("Trying to get a new one...");
+                    log::debug!("Stored access token is invalid: {}", e.to_string());
+                    log::debug!("Trying to get a new one...");
 
                     // Token is invalid so we try to get a new one once.
                     access_token = self.authenticate().await?;
@@ -188,7 +181,7 @@ impl Auth0Client {
         let status = response.status();
         let resp_body = response.text().await?;
 
-        tracing::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
+        log::debug!("Response from Auth0 ({}): {resp_body}", status.as_u16());
 
         if status.is_success() {
             if status == StatusCode::NO_CONTENT {

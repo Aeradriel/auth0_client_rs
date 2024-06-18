@@ -22,8 +22,13 @@ pub struct Auth0ApiError {
 pub enum Error {
     #[error("Missing kid in JWT")]
     JwtMissingKid,
+    #[cfg(not(feature = "jsonwebtoken"))]
+    #[error("Invalid JWT: {0}")]
+    InvalidJwt(#[from] alcoholic_jwt::ValidationError),
+    #[cfg(feature = "jsonwebtoken")]
     #[error("Invalid JWT: {0}")]
     InvalidJwt(#[from] jsonwebtoken::errors::Error),
+
     // this is an internal error and should be considered a bug. That's why I'm not returning any aditional info
     #[error("Invalid JWK")]
     InvalidJwk,
