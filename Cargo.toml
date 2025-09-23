@@ -15,10 +15,8 @@ categories = ["api-bindings", "authentication"]
 alcoholic_jwt = "4091.0.0"
 async-trait = "0.1.61"
 chrono = { version = "0.4.23", features = ["serde"] }
-dotenv = "0.15.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
-pretty_env_logger = "0.4.0"
 regex = "1.7.1"
 reqwest = { version = "0.11.13", features = ["json"] }
 serde = { version = "1.0.152", features = ["derive"] }
